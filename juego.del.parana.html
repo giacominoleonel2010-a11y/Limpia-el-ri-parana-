@@ -1,0 +1,268 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Juego: Limpia el río Paraná</title>
+  <style>
+    :root{--bg:#cde7f8;--water:#74c0e8;--panel:#ffffffcc;--accent:#11698e}
+    html,body{height:100%;margin:0;font-family:Arial,system-ui,-apple-system,'Segoe UI';background:linear-gradient(#dceff8,#bfe6f5);} 
+    .container{max-width:980px;margin:24px auto;padding:16px;background:var(--panel);border-radius:12px;box-shadow:0 6px 24px rgba(15,30,40,0.12)}
+    header{display:flex;align-items:center;gap:16px}
+    h1{margin:0;font-size:20px;color:var(--accent)}
+    p.lead{margin:4px 0 12px;color:#05445E}
+    #gameWrap{display:flex;gap:16px;align-items:flex-start}
+    canvas{background:linear-gradient(#8fd1f7,#60b7e6);border-radius:8px;border:3px solid #ffffff88;box-shadow:inset 0 -20px 60px rgba(0,0,0,0.05)}
+    aside{width:300px}
+    .panel{background:#fff;border-radius:8px;padding:12px;margin-bottom:12px;box-shadow:0 4px 12px rgba(0,0,0,0.04)}
+    button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+    button.secondary{background:#2b8ca3}
+    .stat{display:flex;justify-content:space-between;padding:6px 0;font-weight:600}
+    .small{font-size:13px;color:#05445E}
+    footer{font-size:12px;color:#055e77;margin-top:8px}
+    /* mobile adjustments */
+    @media(max-width:880px){.container{margin:8px} #gameWrap{flex-direction:column} aside{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48'><rect width='48' height='48' rx='8' fill='%2311698e'/><circle cx='24' cy='20' r='10' fill='%23cde7f8'/><rect x='14' y='30' width='20' height='6' rx='3' fill='%23cde7f8' /></svg>" alt="logo" style="width:48px;height:48px;border-radius:8px;"/>
+      <div>
+        <h1>Juego: Limpia el río Paraná</h1>
+        <p class="lead">Recoge basura y limpia el agua. ¡Aprende sobre la contaminación y cuida el río!</p>
+      </div>
+    </header>
+
+    <div id="gameWrap">
+      <canvas id="game" width="640" height="420"></canvas>
+
+      <aside>
+        <div class="panel">
+          <div class="stat"><span>Puntuación</span><span id="score">0</span></div>
+          <div class="stat"><span>Nivel</span><span id="level">1</span></div>
+          <div class="stat"><span>Vida</span><span id="life">3</span></div>
+          <div class="small">Controles: ← → ↑ ↓ para mover; Barra espaciadora para lanzar red.</div>
+        </div>
+
+        <div class="panel">
+          <button id="startBtn">Iniciar juego</button>
+          <button id="resetBtn" class="secondary">Reiniciar</button>
+          <button id="infoBtn" style="margin-left:8px">Información</button>
+        </div>
+
+        <div class="panel">
+          <h3 style="margin:6px 0">Sobre el juego</h3>
+          <p class="small">El objetivo es recoger basura (plásticos, latas) con la red y evitar manchas de petróleo y objetos peligrosos. Cada basura suma puntos; los contaminantes restan vida o velocidad.</p>
+        </div>
+
+        <div class="panel small" id="facts">
+          <strong>Dato:</strong>
+          <p id="factText">El río Paraná es uno de los ríos más importantes de Sudamérica y enfrenta impactos por contaminación industrial, plásticos y agroquímicos.</p>
+        </div>
+
+        <footer>Guarda este archivo como <code>juego_parana.html</code> y ábrelo en Google Chrome.</footer>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Modal sencillo -->
+  <div id="modal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(0,0,0,0.5)">
+    <div style="background:#fff;padding:18px;border-radius:10px;max-width:600px;margin:12px;box-shadow:0 12px 40px rgba(0,0,0,0.35)">
+      <h2 style="margin-top:0">Información sobre la contaminación</h2>
+      <p>La contaminación del río Paraná incluye residuos plásticos, vertidos industriales, y escorrentía agrícola con pesticidas y fertilizantes. Reducir residuos, tratamiento de efluentes y prácticas agrícolas sostenibles ayudan a mejorar su salud.</p>
+      <p style="font-size:13px;color:#006b83">Fuente: juego educativo (resumen). Para aprender más consulta fuentes científicas y ONG ambientales.</p>
+      <div style="text-align:right"><button id="closeModal">Cerrar</button></div>
+    </div>
+  </div>
+
+  <script>
+  // --- Juego simple en canvas ---
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const levelEl = document.getElementById('level');
+  const lifeEl = document.getElementById('life');
+  const startBtn = document.getElementById('startBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const infoBtn = document.getElementById('infoBtn');
+  const modal = document.getElementById('modal');
+  const closeModal = document.getElementById('closeModal');
+  const factText = document.getElementById('factText');
+
+  let WIDTH = canvas.width, HEIGHT = canvas.height;
+  let keys = {};
+
+  // jugador (barca)
+  const player = {x: WIDTH/2, y: HEIGHT-60, w: 64, h: 28, speed: 4};
+
+  let trash = []; // basura recolectable
+  let hazards = []; // contaminantes
+  let nets = []; // redes lanzadas
+  let gameOn = false;
+  let score = 0, level = 1, life = 3;
+  let spawnTimer = 0;
+
+  const facts = [
+    'El río Paraná recorre cerca de 4.880 km y es clave para transporte y biodiversidad.',
+    'Los plásticos afectan a la fauna acuática y al ciclo de nutrientes.',
+    'Los agroquímicos pueden acumularse y afectar la calidad del agua.',
+    'Reducir, reutilizar y reciclar ayuda a disminuir residuos en ríos.'
+  ];
+
+  function rand(min,max){return Math.random()*(max-min)+min}
+
+  function spawnItem(){
+    // cada nivel aumenta probabilidad de hazards
+    const r = Math.random();
+    if(r < 0.65){ // basura
+      trash.push({x:rand(20,WIDTH-20), y:-20, vy:rand(0.6,1.3)+level*0.1, type:'trash'});
+    } else if(r < 0.9){
+      hazards.push({x:rand(20,WIDTH-20), y:-20, vy:rand(0.8,1.6)+level*0.15, type:'oil'});
+    } else {
+      hazards.push({x:rand(20,WIDTH-20), y:-20, vy:rand(1.2,2.2)+level*0.2, type:'metal'});
+    }
+  }
+
+  function resetGame(){
+    trash = []; hazards = []; nets = []; score = 0; level = 1; life = 3; player.x = WIDTH/2; player.speed = 4; updateUI();
+  }
+
+  function startGame(){
+    resetGame(); gameOn = true; spawnTimer = 0; loop();
+  }
+
+  function updateUI(){scoreEl.textContent = score; levelEl.textContent = level; lifeEl.textContent = life;}
+
+  function drawPlayer(){
+    // barca
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    // casco
+    ctx.fillStyle = '#8b4513';
+    ctx.beginPath(); ctx.moveTo(-32,8); ctx.quadraticCurveTo(0,26,32,8); ctx.lineTo(32,0); ctx.quadraticCurveTo(0,18,-32,0); ctx.closePath(); ctx.fill();
+    // cubierta
+    ctx.fillStyle = '#f5f5f5'; ctx.fillRect(-28,-12,56,16);
+    ctx.restore();
+  }
+
+  function drawTrash(it){
+    ctx.save(); ctx.translate(it.x,it.y);
+    if(it.type==='trash'){
+      // bolsa de plastico
+      ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.ellipse(0,0,10,12,0,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#b3b3b3'; ctx.fillRect(-6,6,12,4);
+    }
+    ctx.restore();
+  }
+
+  function drawHazard(it){
+    ctx.save(); ctx.translate(it.x,it.y);
+    if(it.type==='oil'){
+      ctx.fillStyle='rgba(0,0,0,0.8)'; ctx.beginPath(); ctx.ellipse(0,0,18,8,0,0,Math.PI*2); ctx.fill();
+    } else if(it.type==='metal'){
+      ctx.fillStyle='#c0c0c0'; ctx.fillRect(-10,-10,20,20); ctx.fillStyle='#7f7f7f'; ctx.fillRect(-8,-6,16,4);
+    }
+    ctx.restore();
+  }
+
+  function drawNet(n){
+    ctx.save(); ctx.translate(n.x,n.y); ctx.strokeStyle='rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(0,0,18,0,Math.PI*2); ctx.stroke(); ctx.restore();
+  }
+
+  function loop(){
+    if(!gameOn) return;
+    ctx.clearRect(0,0,WIDTH,HEIGHT);
+
+    // spawn
+    spawnTimer += 1 + level*0.02;
+    if(spawnTimer > 40 - level*2){ spawnItem(); spawnTimer = 0; }
+
+    // update trash & hazards
+    for(let i=trash.length-1;i>=0;i--){ trash[i].y += trash[i].vy; if(trash[i].y>HEIGHT+40) trash.splice(i,1); }
+    for(let i=hazards.length-1;i>=0;i--){ hazards[i].y += hazards[i].vy; if(hazards[i].y>HEIGHT+40) hazards.splice(i,1); }
+    for(let i=nets.length-1;i>=0;i--){ nets[i].y -= 6; if(nets[i].y < -20) nets.splice(i,1); }
+
+    // collisions: nets vs trash/hazards
+    for(let ni=nets.length-1;ni>=0;ni--){
+      const n = nets[ni];
+      // trash
+      for(let ti=trash.length-1;ti>=0;ti--){ const t = trash[ti]; if(dist(n.x,n.y,t.x,t.y) < 28){ score += 10; trash.splice(ti,1); }
+      }
+      // hazards: nets can remove hazard but with penalty
+      for(let hi=hazards.length-1;hi>=0;hi--){ const h = hazards[hi]; if(dist(n.x,n.y,h.x,h.y) < 30){
+        if(h.type==='oil'){ life = Math.max(0, life-1); } else { score += 5; }
+        hazards.splice(hi,1);
+      }}
+    }
+
+    // hazards hitting player
+    for(let hi=hazards.length-1;hi>=0;hi--){ const h = hazards[hi]; if(rectCircleCollide(player,h)){ if(h.type==='oil'){ life = Math.max(0, life-1); } else { life = Math.max(0, life-1); } hazards.splice(hi,1); }
+    }
+
+    // level up
+    if(score >= level * 100){ level += 1; player.speed += 0.4; }
+
+    // draw items
+    trash.forEach(drawTrash);
+    hazards.forEach(drawHazard);
+    nets.forEach(drawNet);
+    drawPlayer();
+
+    // HUD on canvas
+    ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.font='14px Arial'; ctx.fillText('Puntos: '+score,12,20); ctx.fillText('Nivel: '+level,12,40);
+
+    updateUI();
+
+    if(life <= 0){ gameOver(); return; }
+
+    // player movement
+    if(keys['ArrowLeft']) player.x -= player.speed;
+    if(keys['ArrowRight']) player.x += player.speed;
+    if(keys['ArrowUp']) player.y -= player.speed;
+    if(keys['ArrowDown']) player.y += player.speed;
+    // limits
+    player.x = Math.max(32, Math.min(WIDTH-32, player.x));
+    player.y = Math.max(48, Math.min(HEIGHT-20, player.y));
+
+    requestAnimationFrame(loop);
+  }
+
+  function dist(x1,y1,x2,y2){return Math.hypot(x1-x2,y1-y2)}
+  function rectCircleCollide(rect,circle){
+    // approximate player as rect, circle as circle
+    const cx = circle.x; const cy = circle.y; const rx = rect.x - rect.w/2; const ry = rect.y - rect.h/2;
+    const nearestX = Math.max(rx, Math.min(cx, rx + rect.w));
+    const nearestY = Math.max(ry, Math.min(cy, ry + rect.h));
+    return dist(cx,cy,nearestX,nearestY) < 18;
+  }
+
+  // events
+  window.addEventListener('keydown', e => { keys[e.key] = true; if(e.code==='Space'){ e.preventDefault(); shootNet(); } });
+  window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+  function shootNet(){ if(!gameOn) return; nets.push({x:player.x, y:player.y-20}); }
+
+  startBtn.addEventListener('click', ()=>{ if(!gameOn) startGame(); else { gameOn = false; startBtn.textContent = 'Iniciar juego'; }});
+  resetBtn.addEventListener('click', ()=>{ resetGame(); gameOn = false; startBtn.textContent = 'Iniciar juego'; });
+  infoBtn.addEventListener('click', ()=>{ modal.style.display='flex'; });
+  closeModal.addEventListener('click', ()=>{ modal.style.display='none'; });
+
+  // mobile touch: tocar para lanzar red
+  canvas.addEventListener('click', (e)=>{ if(gameOn) shootNet(); });
+
+  function gameOver(){ gameOn = false; updateUI(); setTimeout(()=>{ alert('Juego terminado. Puntos: '+score); }, 120);
+  }
+
+  // resize support
+  window.addEventListener('resize', ()=>{
+    // maintain size (kept fixed for simplicity)
+  });
+
+  // random fact rotate
+  setInterval(()=>{ factText.textContent = facts[Math.floor(Math.random()*facts.length)]; },7000);
+
+  // initial UI
+  updateUI();
+  </script>
+</body>
+</html>
